@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.iml
+*.ipr
+*.iws
+
+# Build outputs
+build/
+**/build/
+**/target/
+*.class
+*.jar
+*.war
+
+# Environment files
+.env
+.env.local
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+**/test/
+**/src/test/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db

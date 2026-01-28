@@ -1,0 +1,51 @@
+spring:
+  threads:
+    virtual:
+      enabled: true #Using Virtual Threads for better performance
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # Producer error handling
+      retries: 3
+      properties:
+        acks: all
+        max-in-flight-requests-per-connection: 5
+
+# Management and observability
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  health:
+    kafka:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Application configuration
+github:
+  token: ${GITHUB_TOKEN:}
+  api-url: ${GITHUB_API_URL:https://api.github.com}
+
+# Kafka topic configuration
+kafka:
+  topic:
+    raw-events: ${KAFKA_TOPIC_RAW_EVENTS:raw-github-events}
+
+# Logging configuration
+logging:
+  level:
+    root: INFO
+    com.trendradar.ingestor: INFO
+    org.springframework.kafka: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
