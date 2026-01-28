@@ -10,13 +10,14 @@
 
 2. **GitHub Personal Access Token** in `.env` file
    - Your `.env` file should contain: `GITHUB_TOKEN=your_token_here`
-   - The token is already in your `.env` file ✅
+   - In production environments should use a standard secret management practice.
+
 
 3. **Java 21** (only if building locally, not needed for Docker)
 
 ## Step-by-Step Instructions
 
-### Option 1: Run All Services Except Processor (Recommended)
+### Option 1: Run All Services Except Processor 
 
 ```bash
 # Start all infrastructure + ingestor service (excludes processor_service)
