@@ -1,173 +1,211 @@
-# Quick Start Guide - Running the Application (Without Processor Service)
+# Quick Start Guide
 
 ## Prerequisites
 
 1. **Docker and Docker Compose** installed
    ```bash
    docker --version
-   docker-compose --version
+   docker compose version
    ```
 
 2. **GitHub Personal Access Token** in `.env` file
-   - Your `.env` file should contain: `GITHUB_TOKEN=your_token_here`
-   - In production environments should use a standard secret management practice.
+   ```
+   GITHUB_TOKEN=your_token_here
+   ```
+   In production, use a secrets management system (AWS Secrets Manager, Vault, etc.).
 
+3. **Java 21** (only needed for local development, not for Docker)
 
-3. **Java 21** (only if building locally, not needed for Docker)
+## Running the Full Stack
 
-## Step-by-Step Instructions
-
-### Option 1: Run All Services Except Processor 
+### Build and start everything
 
 ```bash
-# Start all infrastructure + ingestor service (excludes processor_service)
-docker-compose up zookeeper kafka kafdrop redis postgres ingestor_service
+docker compose build
+docker compose up
 ```
 
-### Option 2: Run in Detached Mode (Background)
+### Run in detached mode (background)
 
 ```bash
-# Start services in background
-docker-compose up -d zookeeper kafka kafdrop redis postgres ingestor_service
+docker compose up -d
 
-# View logs
-docker-compose logs -f ingestor_service
+# Follow all service logs
+docker compose logs -f
 
-# Stop all services
-docker-compose down
+# Follow a specific service
+docker compose logs -f ingestor_service
+docker compose logs -f processor_service
 ```
 
-### Option 3: Build and Run
+### Run only specific services
 
 ```bash
-# Build the ingestor service image first
-docker-compose build ingestor_service
+# Infrastructure only
+docker compose up zookeeper kafka kafdrop redis postgres
 
-# Then start all services
-docker-compose up zookeeper kafka kafdrop redis postgres ingestor_service
+# Infrastructure + ingestor only (no processor)
+docker compose up zookeeper kafka kafdrop redis postgres ingestor_service
+
+# Everything
+docker compose up
 ```
 
-## Services That Will Start
+## Services Overview
 
-1. **Zookeeper** (port 2181) - Required for Kafka
-2. **Kafka** (port 9092) - Message broker
-3. **Kafdrop** (port 9000) - Kafka UI for viewing messages
-4. **Redis** (port 6379) - Not used yet (for processor service)
-5. **PostgreSQL** (port 5432) - Not used yet (for processor service)
-6. **Ingestor Service** (port 8080) - The main service that fetches GitHub events
+| Service              | Port  | Description                                      |
+|----------------------|-------|--------------------------------------------------|
+| Zookeeper            | 2181  | Required by Kafka                                |
+| Kafka                | 9092  | Event streaming backbone                         |
+| Kafdrop              | 9000  | Kafka web UI for inspecting topics and messages  |
+| Redis                | 6379  | Real-time trending leaderboard (sorted sets)     |
+| PostgreSQL           | 5432  | Repository metadata, viral milestones, user watches |
+| Ingestor Service     | 8080  | Polls GitHub API, sends events to Kafka          |
+| Processor Service    | 8081  | Consumes Kafka events, updates Redis + PostgreSQL|
 
-## Verifying Everything is Running
+## Architecture
 
-### 1. Check Service Health
+```
+GitHub API
+    │  (polled every 1 second, 100 events per page)
+    ▼
+┌─────────────────┐
+│ Ingestor Service│ ──► Kafka (raw-github-events)
+│   (port 8080)   │
+└─────────────────┘
+                          │
+                          ▼
+                   ┌──────────────────┐
+                   │ Processor Service│
+                   │   (port 8081)    │
+                   └──────┬───────────┘
+                          │
+              ┌───────────┴───────────┐
+              ▼                       ▼
+        ┌──────────┐          ┌────────────┐
+        │  Redis   │          │ PostgreSQL │
+        │ (scores) │          │ (metadata) │
+        └──────────┘          └────────────┘
+```
+
+**Ingestor Service** polls GitHub's `/events` API every second, filters for high-value events
+(WatchEvent, ForkEvent, PullRequestEvent, IssuesEvent), and publishes them to Kafka.
+
+**Processor Service** consumes events from Kafka and:
+1. Updates the Redis leaderboard with weighted scores
+2. Fetches and stores repository metadata in PostgreSQL (on first sighting)
+3. Records viral milestones when a repo crosses score thresholds (50, 100, 500, 1000, 5000)
+
+## Verifying the System
+
+### 1. Check all containers are healthy
 
 ```bash
-# Check all running containers
-docker-compose ps
+docker compose ps
+```
 
-# Check ingestor service health
+### 2. Health endpoints
+
+```bash
+# Ingestor service
 curl http://localhost:8080/actuator/health
+
+# Processor service
+curl http://localhost:8081/actuator/health
 ```
 
-Expected response:
-```json
-{"status":"UP"}
-```
+Expected: `{"status":"UP"}`
 
-### 2. Check Ingestor Service Logs
+### 3. View Kafka messages (Kafdrop)
+
+Open **http://localhost:9000** in your browser.
+- Look for the `raw-github-events` topic
+- Click into the topic to see messages flowing
+
+### 4. Check Redis leaderboard
 
 ```bash
-# View logs
-docker-compose logs -f ingestor_service
+# Connect to Redis and view top trending repos
+docker compose exec redis redis-cli ZREVRANGE trending:repos 0 9 WITHSCORES
 ```
 
-You should see:
-- Service initialization messages
-- "Fetching GitHub events from API" every 5 seconds
-- Event processing statistics
-
-### 3. View Kafka Messages (Kafdrop UI)
-
-Open in browser: **http://localhost:9000**
-
-- You should see the `raw-github-events` topic
-- Messages will appear as the ingestor service fetches events from GitHub
-
-### 4. Check Metrics
+### 5. Check PostgreSQL data
 
 ```bash
-# Application info
-curl http://localhost:8080/actuator/info
+# Connect to PostgreSQL
+docker compose exec postgres psql -U user -d trend_radar
 
-# Metrics
-curl http://localhost:8080/actuator/metrics
+# View stored repository metadata
+SELECT repo_name, primary_language, license, owner FROM repository_metadata LIMIT 10;
+
+# View viral milestones
+SELECT repo_name, score_threshold, reached_at FROM viral_milestones ORDER BY reached_at DESC LIMIT 10;
+
+# Exit
+\q
 ```
 
-## Troubleshooting
+### 6. Service logs
 
-### Issue: Ingestor service fails to start
-
-**Check:**
 ```bash
-# View detailed logs
-docker-compose logs ingestor_service
+# Ingestor: should show events being fetched and sent to Kafka
+docker compose logs -f ingestor_service
 
-# Common issues:
-# 1. Missing GITHUB_TOKEN - check .env file
-# 2. Kafka not ready - wait for Kafka healthcheck to pass
-# 3. Build failure - run: docker-compose build ingestor_service
-```
-
-### Issue: Cannot connect to Kafka
-
-**Solution:**
-```bash
-# Wait for Kafka to be healthy
-docker-compose ps kafka
-
-# Check Kafka logs
-docker-compose logs kafka
-```
-
-### Issue: Port already in use
-
-**Solution:**
-```bash
-# Check what's using the port
-lsof -i :8080  # For ingestor service
-lsof -i :9092  # For Kafka
-lsof -i :9000  # For Kafdrop
-
-# Stop conflicting services or change ports in docker-compose.yml
+# Processor: should show events being scored and milestones being recorded
+docker compose logs -f processor_service
 ```
 
 ## Stopping the Application
 
 ```bash
 # Stop all services
-docker-compose down
+docker compose down
 
-# Stop and remove volumes (clears data)
-docker-compose down -v
+# Stop and remove all data (Redis, PostgreSQL volumes)
+docker compose down -v
 ```
 
-## What Happens When Running
+## Troubleshooting
 
-1. **Infrastructure starts** (Zookeeper, Kafka, Redis, PostgreSQL)
-2. **Ingestor service starts** and connects to Kafka
-3. **Every 5 seconds**, the ingestor service:
-   - Fetches events from GitHub API
-   - Filters for high-value events (WatchEvent, ForkEvent)
-   - Sends events to Kafka topic `raw-github-events`
-4. **Events accumulate in Kafka** (waiting for processor service to consume them)
+### No high-value events appearing
 
-## Next Steps
-
-Once the processor service is implemented, you can add it with:
+The ingestor filters for WatchEvent, ForkEvent, PullRequestEvent, and IssuesEvent.
+These are less frequent than PushEvents. Check the logs to verify events are being fetched:
 ```bash
-docker-compose up processor_service
+docker compose logs -f ingestor_service | grep "High value"
 ```
 
-Or run everything:
+### Processor not consuming events
+
 ```bash
-docker-compose up
+# Check processor logs for errors
+docker compose logs processor_service
+
+# Verify Kafka topic has messages via Kafdrop
+# Open http://localhost:9000 and check "raw-github-events" topic
+```
+
+### Service fails to start
+
+```bash
+# Check the failing service logs
+docker compose logs <service_name>
+
+# Common issues:
+# - Missing GITHUB_TOKEN in .env file
+# - Port conflict (another process using 8080, 8081, 9092, etc.)
+# - Kafka not ready yet (wait for healthcheck)
+```
+
+### Database connection errors
+
+```bash
+# Check PostgreSQL is running
+docker compose ps postgres
+
+# Check PostgreSQL logs
+docker compose logs postgres
+
+# Verify tables were created
+docker compose exec postgres psql -U user -d trend_radar -c "\dt"
 ```

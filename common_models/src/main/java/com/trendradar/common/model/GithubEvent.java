@@ -17,6 +17,9 @@ public record GithubEvent(
     public boolean isHighValue() {
         return "WatchEvent".equals(type) 
             || "ForkEvent".equals(type)
-            || "PushEvent".equals(type);  // Added for testing - very common event
+            || "PullRequestEvent".equals(type)
+            || "IssuesEvent".equals(type)
+            //|| "PushEvent".equals(type)  
+            ; 
     }
 }

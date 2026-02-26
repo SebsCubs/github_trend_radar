@@ -34,6 +34,7 @@ management:
 github:
   token: ${GITHUB_TOKEN:}
   api-url: ${GITHUB_API_URL:https://api.github.com}
+  poll-interval-ms: ${GITHUB_POLL_INTERVAL_MS:1000}
 
 # Kafka topic configuration
 kafka:

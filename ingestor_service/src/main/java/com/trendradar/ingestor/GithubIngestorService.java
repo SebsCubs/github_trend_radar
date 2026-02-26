@@ -54,13 +54,13 @@ public class GithubIngestorService {
         logger.info("GithubIngestorService initialized with API base URL: {}", apiBaseUrl);
     }
 
-    @Scheduled(fixedDelay = 5000) // Poll every 5 seconds
+    @Scheduled(fixedDelayString = "${github.poll-interval-ms:1000}")
     public void fetchAndStreamEvents() {
         try {
             logger.debug("Fetching GitHub events from API");
             
             List<GithubEvent> events = restClient.get()
-                    .uri("/events")
+                    .uri("/events?per_page=100")
                     .retrieve()
                     .body(new ParameterizedTypeReference<List<GithubEvent>>() {});
 
